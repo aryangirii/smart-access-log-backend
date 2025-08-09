@@ -1,4 +1,4 @@
-from flask import Flask, jsonify
+from flask import Flask, jsonify, request
 from flask_cors import CORS
 import psycopg2
 import os
@@ -28,32 +28,84 @@ def home():
 
 @app.route("/health")
 def health():
-    return jsonify({"status": "OK"})
+    try:
+        conn = get_db_connection()
+        conn.close()
+        return jsonify({"status": "OK", "db_connection": "Success"})
+    except Exception as e:
+        return jsonify({"status": "ERROR", "db_connection": str(e)}), 500
 
-@app.route("/logs")
+# CREATE - Insert a new log
+@app.route("/logs", methods=["POST"])
+def create_log():
+    try:
+        data = request.get_json()
+        username = data.get("username")
+        action = data.get("action")
+
+        conn = get_db_connection()
+        cur = conn.cursor()
+        cur.execute(
+            "INSERT INTO access_logs (username, action) VALUES (%s, %s) RETURNING id;",
+            (username, action)
+        )
+        log_id = cur.fetchone()[0]
+        conn.commit()
+        cur.close()
+        conn.close()
+
+        return jsonify({"message": "Log created successfully", "id": log_id}), 201
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+# READ - Get all logs
+@app.route("/logs", methods=["GET"])
 def get_logs():
     try:
         conn = get_db_connection()
         cur = conn.cursor()
         cur.execute("SELECT * FROM access_logs ORDER BY timestamp DESC;")
         rows = cur.fetchall()
-
-        # Convert rows to dictionaries
         logs = [
-            {
-                "id": row[0],
-                "username": row[1],
-                "action": row[2],
-                "timestamp": row[3].isoformat()
-            }
+            {"id": row[0], "username": row[1], "action": row[2], "timestamp": row[3].isoformat()}
             for row in rows
         ]
+        cur.close()
+        conn.close()
+        return jsonify(logs)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
+# UPDATE - Update a log entry
+@app.route("/logs/<int:log_id>", methods=["PUT"])
+def update_log(log_id):
+    try:
+        data = request.get_json()
+        action = data.get("action")
+
+        conn = get_db_connection()
+        cur = conn.cursor()
+        cur.execute("UPDATE access_logs SET action = %s WHERE id = %s;", (action, log_id))
+        conn.commit()
         cur.close()
         conn.close()
 
-        return jsonify(logs)
+        return jsonify({"message": "Log updated successfully"})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
+# DELETE - Delete a log entry
+@app.route("/logs/<int:log_id>", methods=["DELETE"])
+def delete_log(log_id):
+    try:
+        conn = get_db_connection()
+        cur = conn.cursor()
+        cur.execute("DELETE FROM access_logs WHERE id = %s;", (log_id,))
+        conn.commit()
+        cur.close()
+        conn.close()
+
+        return jsonify({"message": "Log deleted successfully"})
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
