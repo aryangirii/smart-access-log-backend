@@ -2,16 +2,19 @@ from flask import Flask, jsonify, request
 from flask_cors import CORS
 import psycopg2
 import os
-from urllib.parse import urlparse
 
 app = Flask(__name__)
 CORS(app)
 
-# Load database URL from environment
-DATABASE_URL = os.getenv("DATABASE_URL")
-
+# Function to create a database connection
 def get_db_connection():
-    return psycopg2.connect(DATABASE_URL)
+    return psycopg2.connect(
+        host=os.getenv("DB_HOST"),
+        database=os.getenv("DB_NAME"),
+        user=os.getenv("DB_USER"),
+        password=os.getenv("DB_PASSWORD"),
+        port=os.getenv("DB_PORT")
+    )
 
 # Ensure the table exists
 def init_db():
