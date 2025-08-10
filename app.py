@@ -2,27 +2,16 @@ from flask import Flask, jsonify, request
 from flask_cors import CORS
 import psycopg2
 import os
+from urllib.parse import urlparse
 
 app = Flask(__name__)
 CORS(app)
 
-# Database connection info from environment variables
-DB_HOST = os.getenv("DB_HOST", "your-db-endpoint.rds.amazonaws.com")
-DB_NAME = os.getenv("DB_NAME", "yourdbname")
-DB_USER = os.getenv("DB_USER", "yourdbuser")
-DB_PASSWORD = os.getenv("DB_PASSWORD", "yourdbpassword")
-DB_PORT = os.getenv("DB_PORT", "5432")
-
+# Load database URL from environment
+DATABASE_URL = os.getenv("DATABASE_URL")
 
 def get_db_connection():
-    return psycopg2.connect(
-        host=DB_HOST,
-        database=DB_NAME,
-        user=DB_USER,
-        password=DB_PASSWORD,
-        port=DB_PORT
-    )
-
+    return psycopg2.connect(DATABASE_URL)
 
 # Ensure the table exists
 def init_db():
@@ -44,11 +33,9 @@ def init_db():
     except Exception as e:
         print(f"❌ Error initializing database: {e}")
 
-
 @app.route("/")
 def home():
     return jsonify({"message": "Smart Access Log Viewer backend is live with RDS!"})
-
 
 @app.route("/health")
 def health():
@@ -61,7 +48,6 @@ def health():
         return jsonify({"status": "OK", "db_connection": "Success"})
     except Exception as e:
         return jsonify({"status": "ERROR", "db_connection": str(e)}), 500
-
 
 # CREATE - Insert a new log
 @app.route("/logs", methods=["POST"])
@@ -86,7 +72,6 @@ def create_log():
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
-
 # READ - Get all logs
 @app.route("/logs", methods=["GET"])
 def get_logs():
@@ -104,7 +89,6 @@ def get_logs():
         return jsonify(logs)
     except Exception as e:
         return jsonify({"error": str(e)}), 500
-
 
 # UPDATE - Update a log entry
 @app.route("/logs/<int:log_id>", methods=["PUT"])
@@ -124,7 +108,6 @@ def update_log(log_id):
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
-
 # DELETE - Delete a log entry
 @app.route("/logs/<int:log_id>", methods=["DELETE"])
 def delete_log(log_id):
@@ -139,7 +122,6 @@ def delete_log(log_id):
         return jsonify({"message": "Log deleted successfully"})
     except Exception as e:
         return jsonify({"error": str(e)}), 500
-
 
 if __name__ == "__main__":
     init_db()  # Ensure DB is ready before serving requests
