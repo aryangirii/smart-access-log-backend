@@ -1,131 +1,80 @@
 from flask import Flask, jsonify, request
 from flask_cors import CORS
-import psycopg2
-import os
+from datetime import datetime
 
 app = Flask(__name__)
 CORS(app)
 
-# Function to create a database connection
-def get_db_connection():
-    return psycopg2.connect(
-        host=os.getenv("DB_HOST"),
-        database=os.getenv("DB_NAME"),
-        user=os.getenv("DB_USER"),
-        password=os.getenv("DB_PASSWORD"),
-        port=os.getenv("DB_PORT")
-    )
+# In-memory "database" for access logs
+mock_logs = [
+    {"id": 1, "username": "Aryan", "action": "login", "timestamp": datetime.utcnow().isoformat()},
+    {"id": 2, "username": "TestUser", "action": "viewed dashboard", "timestamp": datetime.utcnow().isoformat()},
+]
 
-# Ensure the table exists
-def init_db():
-    try:
-        conn = get_db_connection()
-        cur = conn.cursor()
-        cur.execute("""
-            CREATE TABLE IF NOT EXISTS access_logs (
-                id SERIAL PRIMARY KEY,
-                username TEXT NOT NULL,
-                action TEXT NOT NULL,
-                timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            );
-        """)
-        conn.commit()
-        cur.close()
-        conn.close()
-        print("✅ Database table 'access_logs' is ready.")
-    except Exception as e:
-        print(f"❌ Error initializing database: {e}")
+# Helper to get next ID
+def get_next_id():
+    if mock_logs:
+        return max(log["id"] for log in mock_logs) + 1
+    return 1
 
 @app.route("/")
 def home():
-    return jsonify({"message": "Smart Access Log Viewer backend is live with RDS!"})
+    return jsonify({"message": "Smart Access Log Viewer backend is live with mock data!"})
 
 @app.route("/health")
 def health():
-    try:
-        conn = get_db_connection()
-        cur = conn.cursor()
-        cur.execute("SELECT 1;")
-        cur.close()
-        conn.close()
-        return jsonify({"status": "OK", "db_connection": "Success"})
-    except Exception as e:
-        return jsonify({"status": "ERROR", "db_connection": str(e)}), 500
+    return jsonify({"status": "OK", "db_connection": "Mock DB active"})
 
 # CREATE - Insert a new log
 @app.route("/logs", methods=["POST"])
 def create_log():
-    try:
-        data = request.get_json()
-        username = data.get("username")
-        action = data.get("action")
+    data = request.get_json()
+    username = data.get("username")
+    action = data.get("action")
 
-        conn = get_db_connection()
-        cur = conn.cursor()
-        cur.execute(
-            "INSERT INTO access_logs (username, action) VALUES (%s, %s) RETURNING id;",
-            (username, action)
-        )
-        log_id = cur.fetchone()[0]
-        conn.commit()
-        cur.close()
-        conn.close()
+    if not username or not action:
+        return jsonify({"error": "username and action are required"}), 400
 
-        return jsonify({"message": "Log created successfully", "id": log_id}), 201
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
+    new_log = {
+        "id": get_next_id(),
+        "username": username,
+        "action": action,
+        "timestamp": datetime.utcnow().isoformat()
+    }
+    mock_logs.append(new_log)
+    return jsonify({"message": "Log created successfully", "id": new_log["id"]}), 201
 
 # READ - Get all logs
 @app.route("/logs", methods=["GET"])
 def get_logs():
-    try:
-        conn = get_db_connection()
-        cur = conn.cursor()
-        cur.execute("SELECT * FROM access_logs ORDER BY timestamp DESC;")
-        rows = cur.fetchall()
-        logs = [
-            {"id": row[0], "username": row[1], "action": row[2], "timestamp": row[3].isoformat()}
-            for row in rows
-        ]
-        cur.close()
-        conn.close()
-        return jsonify(logs)
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
+    # Return logs ordered by timestamp descending
+    sorted_logs = sorted(mock_logs, key=lambda x: x["timestamp"], reverse=True)
+    return jsonify(sorted_logs)
 
 # UPDATE - Update a log entry
 @app.route("/logs/<int:log_id>", methods=["PUT"])
 def update_log(log_id):
-    try:
-        data = request.get_json()
-        action = data.get("action")
+    data = request.get_json()
+    action = data.get("action")
 
-        conn = get_db_connection()
-        cur = conn.cursor()
-        cur.execute("UPDATE access_logs SET action = %s WHERE id = %s;", (action, log_id))
-        conn.commit()
-        cur.close()
-        conn.close()
+    if not action:
+        return jsonify({"error": "action is required"}), 400
 
-        return jsonify({"message": "Log updated successfully"})
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
+    for log in mock_logs:
+        if log["id"] == log_id:
+            log["action"] = action
+            return jsonify({"message": "Log updated successfully"})
+    return jsonify({"error": "Log not found"}), 404
 
 # DELETE - Delete a log entry
 @app.route("/logs/<int:log_id>", methods=["DELETE"])
 def delete_log(log_id):
-    try:
-        conn = get_db_connection()
-        cur = conn.cursor()
-        cur.execute("DELETE FROM access_logs WHERE id = %s;", (log_id,))
-        conn.commit()
-        cur.close()
-        conn.close()
-
-        return jsonify({"message": "Log deleted successfully"})
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
+    global mock_logs
+    new_logs = [log for log in mock_logs if log["id"] != log_id]
+    if len(new_logs) == len(mock_logs):
+        return jsonify({"error": "Log not found"}), 404
+    mock_logs = new_logs
+    return jsonify({"message": "Log deleted successfully"})
 
 if __name__ == "__main__":
-    init_db()  # Ensure DB is ready before serving requests
     app.run(host="0.0.0.0", port=5000)
