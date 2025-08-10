@@ -2,25 +2,36 @@ from flask import Flask, jsonify, request
 from flask_cors import CORS
 import psycopg2
 import os
+from urllib.parse import urlparse
 
 app = Flask(__name__)
 CORS(app)
 
-# Database connection info from environment variables
-DB_HOST = os.getenv("DB_HOST", "your-db-endpoint.rds.amazonaws.com")
-DB_NAME = os.getenv("DB_NAME", "yourdbname")
-DB_USER = os.getenv("DB_USER", "yourdbuser")
-DB_PASSWORD = os.getenv("DB_PASSWORD", "yourdbpassword")
-DB_PORT = os.getenv("DB_PORT", "5432")
+# Load database URL from environment
+DATABASE_URL = os.getenv("DATABASE_URL")
 
 def get_db_connection():
-    return psycopg2.connect(
-        host=DB_HOST,
-        database=DB_NAME,
-        user=DB_USER,
-        password=DB_PASSWORD,
-        port=DB_PORT
-    )
+    return psycopg2.connect(DATABASE_URL)
+
+# Ensure the table exists
+def init_db():
+    try:
+        conn = get_db_connection()
+        cur = conn.cursor()
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS access_logs (
+                id SERIAL PRIMARY KEY,
+                username TEXT NOT NULL,
+                action TEXT NOT NULL,
+                timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            );
+        """)
+        conn.commit()
+        cur.close()
+        conn.close()
+        print("✅ Database table 'access_logs' is ready.")
+    except Exception as e:
+        print(f"❌ Error initializing database: {e}")
 
 @app.route("/")
 def home():
@@ -30,6 +41,9 @@ def home():
 def health():
     try:
         conn = get_db_connection()
+        cur = conn.cursor()
+        cur.execute("SELECT 1;")
+        cur.close()
         conn.close()
         return jsonify({"status": "OK", "db_connection": "Success"})
     except Exception as e:
@@ -110,4 +124,5 @@ def delete_log(log_id):
         return jsonify({"error": str(e)}), 500
 
 if __name__ == "__main__":
+    init_db()  # Ensure DB is ready before serving requests
     app.run(host="0.0.0.0", port=5000)
