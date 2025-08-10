@@ -5,14 +5,21 @@ from datetime import datetime
 app = Flask(__name__)
 CORS(app)
 
-# In-memory "database" for access logs
+# Mock users with passwords (for demo only)
+mock_users = [
+    {"id": 1, "username": "Aryan", "password": "password123"},
+    {"id": 2, "username": "TestUser", "password": "testpass"},
+    {"id": 3, "username": "Guest", "password": "guest2025"},
+]
+
+# Mock access logs
 mock_logs = [
     {"id": 1, "username": "Aryan", "action": "login", "timestamp": datetime.utcnow().isoformat()},
     {"id": 2, "username": "TestUser", "action": "viewed dashboard", "timestamp": datetime.utcnow().isoformat()},
 ]
 
-# Helper to get next ID
-def get_next_id():
+# Helper to get next ID for logs
+def get_next_log_id():
     if mock_logs:
         return max(log["id"] for log in mock_logs) + 1
     return 1
@@ -25,6 +32,40 @@ def home():
 def health():
     return jsonify({"status": "OK", "db_connection": "Mock DB active"})
 
+# LOGIN - Authenticate user
+@app.route("/login", methods=["POST"])
+def login():
+    data = request.get_json()
+    username = data.get("username")
+    password = data.get("password")
+
+    if not username or not password:
+        return jsonify({"error": "username and password are required"}), 400
+
+    # Check if user exists and password matches
+    user = next((u for u in mock_users if u["username"] == username and u["password"] == password), None)
+
+    if user:
+        # Log the successful login
+        new_log = {
+            "id": get_next_log_id(),
+            "username": username,
+            "action": "login successful",
+            "timestamp": datetime.utcnow().isoformat()
+        }
+        mock_logs.append(new_log)
+        return jsonify({"message": "Login successful", "user_id": user["id"]})
+    else:
+        # Log the failed login
+        new_log = {
+            "id": get_next_log_id(),
+            "username": username,
+            "action": "login failed",
+            "timestamp": datetime.utcnow().isoformat()
+        }
+        mock_logs.append(new_log)
+        return jsonify({"error": "Invalid username or password"}), 401
+
 # CREATE - Insert a new log
 @app.route("/logs", methods=["POST"])
 def create_log():
@@ -36,7 +77,7 @@ def create_log():
         return jsonify({"error": "username and action are required"}), 400
 
     new_log = {
-        "id": get_next_id(),
+        "id": get_next_log_id(),
         "username": username,
         "action": action,
         "timestamp": datetime.utcnow().isoformat()
